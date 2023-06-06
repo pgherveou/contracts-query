@@ -1,0 +1,22 @@
+[package]
+name = "contracts-query"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+subxt = { git = "https://github.com/paritytech/subxt", branch = "master" }
+
+clap = { version = "4.0.29", features = ["derive"] }
+tokio = { version = "1.8", features = ["rt-multi-thread", "macros", "time"] }
+futures = "0.3.13"
+codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = ["derive", "full", "bit-vec"] }
+hex = "0.4.3"
+sp-keyring = "23.0.0"
+pallet-contracts-primitives = "23.0.0"
+anyhow = "1.0.71"
+jsonrpsee = { version = "0.18.2", features = ["ws-client"]}
+sp-core = "20.0.0"
+chrono = "0.4.26"
+frame-support = "21.0.0"
