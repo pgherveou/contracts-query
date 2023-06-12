@@ -97,12 +97,13 @@ impl NodeClient {
     pub async fn get_keys(&self, block_hash: Option<H256>) -> Result<Vec<StorageKey>> {
         const PAGE_SIZE: usize = 100;
         let mut keys = Vec::<StorageKey>::new();
+        let mut start_key = None;
 
         loop {
             let new_keys = self
                 .client
                 .rpc()
-                .storage_keys_paged(&[], PAGE_SIZE as u32, None, block_hash)
+                .storage_keys_paged(&[], PAGE_SIZE as u32, start_key, block_hash)
                 .await
                 .map_err(|reason| anyhow::format_err!("get_keys failed: {:?}", reason))?;
 
@@ -111,6 +112,7 @@ impl NodeClient {
             if !has_more {
                 break;
             }
+            start_key = keys.last().map(|k| k.as_ref());
         }
 
         Ok(keys)

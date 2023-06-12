@@ -33,7 +33,7 @@ pub struct ChainBlockRef<T: Config> {
 }
 
 pub fn vec_chain_block_extrinsic<S: Serializer>(
-    extrinsics: &Vec<ChainBlockExtrinsic>,
+    extrinsics: &[ChainBlockExtrinsic],
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     #[derive(Serialize)]
