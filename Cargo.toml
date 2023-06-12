@@ -20,4 +20,6 @@ serde_json = "1.0.96"
 sp-core = "20.0.0"
 sp-keyring = "23.0.0"
 subxt = { git = "https://github.com/paritytech/subxt", branch = "master" }
+impl-serde = { version = "0.4.0" }
 tokio = { version = "1.8", features = ["rt-multi-thread", "macros", "time"] }
+

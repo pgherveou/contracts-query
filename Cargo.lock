@@ -491,6 +491,7 @@ dependencies = [
  "frame-support",
  "futures",
  "hex",
+ "impl-serde",
  "jsonrpsee 0.18.2",
  "pallet-contracts-primitives",
  "parity-scale-codec",
