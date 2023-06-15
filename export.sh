@@ -49,7 +49,6 @@ echo "Sealing block 3"
 curl http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
 	-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
 
-sleep 100
 # export db for each block
 contracts-query db-export db-0.json 0
 contracts-query db-export db-1.json 1
@@ -58,3 +57,5 @@ contracts-query db-export db-2.json 3
 
 # export blocks
 contracts-query block-export blocks.json 0 1 2 3
+
+sleep 100
