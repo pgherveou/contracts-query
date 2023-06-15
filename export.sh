@@ -71,13 +71,23 @@ echo "Sealing block 3"
 curl --silent http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
 	-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
 
+# terminate contract 1 at block 4
+cargo contract call --contract $contract --message terminate --suri //Alice --execute --skip-confirm >/dev/null 2>&1 &
+sleep 1
+
+# seal block 3
+echo "Sealing block 4"
+curl --silent http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
+	-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
+
 popd
 
 # export db for each block
 ./target/release/contracts-query db-export db-0.json 0
 ./target/release/contracts-query db-export db-1.json 1
 ./target/release/contracts-query db-export db-2.json 2
-./target/release/contracts-query db-export db-2.json 3
+./target/release/contracts-query db-export db-3.json 3
+./target/release/contracts-query db-export db-4.json 4
 
 # export blocks
-./target/release/contracts-query block-export blocks.json 0 1 2 3
+./target/release/contracts-query block-export blocks.json 0 1 2 3 4

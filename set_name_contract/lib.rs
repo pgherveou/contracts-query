@@ -28,6 +28,12 @@ mod name_setter {
             self.name = new_value;
         }
 
+        /// terminate the contract
+        #[ink(message)]
+        pub fn terminate(&mut self) {
+            self.env().terminate_contract(self.env().caller());
+        }
+
         /// Simply returns the current `name` value.
         #[ink(message)]
         pub fn get_name(&self) -> String {
