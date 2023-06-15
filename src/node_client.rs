@@ -6,6 +6,7 @@ use frame_support::storage::storage_prefix;
 
 use sp_core::H256;
 use subxt::rpc::types::{ChainBlock, ChainBlockResponse, StorageChangeSet, StorageData};
+use subxt::rpc_params;
 use subxt::storage::StorageKey;
 use subxt::{config::PolkadotConfig, OnlineClient};
 
@@ -21,33 +22,9 @@ impl NodeClient {
         Ok(NodeClient { client })
     }
 
-    /// Print each block until the target version is reached.
-    pub async fn print_block(&self, target_version: StorageVersion) -> Result<()> {
-        let mut block_number = self.get_blocknumber().await?;
-        loop {
-            block_number -= 1;
-            let block_hash = self.get_blockhash(block_number).await?;
-            let time = self.get_timestamp(block_hash).await?;
-            let version = self.get_contract_version(Some(block_hash)).await?;
-            println!("{block_number} -> {time} -> {:?}", version);
-
-            if version == target_version {
-                break;
-            }
-        }
-        Ok(())
-    }
-
     /// Get the block number of the current block.
     pub async fn get_blocknumber(&self) -> Result<u32> {
-        let number_addr = polkadot::storage().system().number();
-        self.client
-            .storage()
-            .at_latest()
-            .await?
-            .fetch(&number_addr)
-            .await?
-            .ok_or_else(|| anyhow::format_err!("system::number not found"))
+        Ok(self.client.blocks().at_latest().await?.number())
     }
 
     /// Get the contract storage version.
@@ -64,14 +41,11 @@ impl NodeClient {
 
     /// Get the block hash of the given block number.
     pub async fn get_blockhash(&self, block_number: u32) -> Result<H256> {
-        let block_hash_addr = polkadot::storage().system().block_hash(block_number);
         self.client
-            .storage()
-            .at_latest()
-            .await?
-            .fetch(&block_hash_addr)
-            .await?
-            .ok_or_else(|| anyhow::format_err!("system::block_hash {block_number} not found"))
+            .rpc()
+            .request("chain_getBlockHash", rpc_params![block_number])
+            .await
+            .map_err(|reason| anyhow::format_err!("failed to get block hash: {:?}", reason))
     }
 
     /// Get the timestamp of the given block.

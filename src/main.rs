@@ -1,13 +1,14 @@
-#![allow(dead_code)]
+// #![allow(dead_code)]
+// #![allow(unused_imports)]
+// #![allow(unused_variables)]
 
 mod node_client;
 
+use anyhow::Result;
+use clap::Parser;
+use serde::{Serialize, Serializer};
 use std::fs::File;
 use std::io::Write;
-
-use anyhow::Result;
-
-use serde::{Serialize, Serializer};
 use subxt::rpc::types::ChainBlock;
 use subxt::rpc::types::{ChainBlockExtrinsic, StorageData};
 use subxt::storage::StorageKey;
@@ -16,6 +17,37 @@ use subxt::{Config, PolkadotConfig};
 /// Note, generate the file with subxt metadata -f bytes > metadata.scale
 #[subxt::subxt(runtime_metadata_path = "./metadata.scale")]
 pub mod polkadot {}
+
+// Parsed command instructions from the command line
+#[derive(Parser)]
+#[clap(author, about, version)]
+struct CliCommand {
+    #[clap(default_value = "ws://127.0.0.1:9944")]
+    url: String,
+
+    /// the command to execute
+    #[clap(subcommand)]
+    command: SubCommand,
+}
+
+/// The subcommand to execute
+#[derive(Parser, Debug)]
+enum SubCommand {
+    /// Export the change sets for all the keys since block 0
+    ChangeSets { output_file: String },
+
+    /// Export the database as a json file
+    DBExport { output_file: String, at_block: u32 },
+
+    /// Export the blocks as a json file
+    BlockExport {
+        output_file: String,
+        blocks: Vec<u32>,
+    },
+
+    /// Print each block until the target version is reached.
+    PrintBlocksVersion { target_version: u16 },
+}
 
 #[derive(Debug, Serialize)]
 struct DBEntry {
@@ -46,48 +78,81 @@ pub fn vec_chain_block_extrinsic<S: Serializer>(
     }))
 }
 
+fn write_to_file<T: Serialize>(value: &T, file: String) -> Result<()> {
+    let json = serde_json::to_string_pretty(value)?;
+    let mut file = File::create(file)?;
+    file.write_all(json.as_bytes())?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = node_client::NodeClient::from_url("ws://127.0.0.1:9944").await?;
-    let block_0_hash = client.get_blockhash(0).await?;
+    let CliCommand { url, command } = CliCommand::parse();
+    let client = node_client::NodeClient::from_url(&url).await?;
 
-    // Get the change_sets at block 1
-    {
-        // get all the keys at the last block
-        let keys = client.get_keys(None).await?;
+    match command {
+        SubCommand::ChangeSets { output_file } => {
+            // get all the keys at the last block
+            let keys = client.get_keys(None).await?;
 
-        // get change sets for all these keys since block 0
-        let change_sets = client
-            .query_storage_value(keys.clone(), block_0_hash)
-            .await?;
-        let json = serde_json::to_string_pretty(&change_sets).unwrap();
-        let mut file = File::create("change_sets.json").unwrap();
-        file.write_all(json.as_bytes()).unwrap();
-    }
+            // get change sets for all these keys since block 0
+            let block_0_hash = client.get_blockhash(0).await?;
+            let change_sets = client
+                .query_storage_value(keys.clone(), block_0_hash)
+                .await?;
 
-    // export db at block 0
-    {
-        let keys = client.get_keys(block_0_hash.into()).await?;
-        let mut db_entries = Vec::new();
-        for key in keys {
-            let value = client.get_storage_value(&key, block_0_hash.into()).await?;
-            db_entries.push(DBEntry { key, value });
+            write_to_file(&change_sets, output_file)?;
         }
+        SubCommand::DBExport {
+            output_file,
+            at_block,
+        } => {
+            let block_hash = client.get_blockhash(at_block).await?;
+            let keys = client.get_keys(block_hash.into()).await?;
+            let mut db_entries = Vec::new();
+            for key in keys {
+                let value = client.get_storage_value(&key, block_hash.into()).await?;
+                db_entries.push(DBEntry { key, value });
+            }
 
-        let json = serde_json::to_string_pretty(&db_entries).unwrap();
-        let mut file = File::create("db.json").unwrap();
-        file.write_all(json.as_bytes()).unwrap();
-    }
+            write_to_file(&db_entries, output_file)?;
+        }
+        SubCommand::BlockExport {
+            output_file,
+            blocks,
+        } => {
+            #[derive(Serialize)]
+            struct Helper(#[serde(with = "ChainBlockRef")] ChainBlock<PolkadotConfig>);
 
-    // export blocks
-    {
-        #[derive(Serialize)]
-        struct Helper(#[serde(with = "ChainBlockRef")] ChainBlock<PolkadotConfig>);
+            use futures::stream::{self, StreamExt, TryStreamExt};
 
-        let block = client.get_block(None).await?;
-        let json = serde_json::to_string_pretty(&Helper(block)).unwrap();
-        let mut file = File::create("blocks.json").unwrap();
-        file.write_all(json.as_bytes()).unwrap();
+            let client = &client;
+            let blocks = stream::iter(blocks.clone())
+                .then(|block_number| async move {
+                    let hash = client.get_blockhash(block_number).await?;
+                    let block = client.get_block(Some(hash)).await?;
+                    Ok::<Helper, anyhow::Error>(Helper(block))
+                })
+                .try_collect::<Vec<_>>()
+                .await?;
+
+            write_to_file(&blocks, output_file)?;
+        }
+        SubCommand::PrintBlocksVersion { target_version } => {
+            let mut block_number = client.get_blocknumber().await?;
+
+            loop {
+                let block_hash = client.get_blockhash(block_number).await?;
+                let time = client.get_timestamp(block_hash).await?;
+                let version = client.get_contract_version(Some(block_hash)).await?;
+                println!("{block_number} -> {time} -> {:?}", version);
+                block_number -= 1;
+
+                if version == target_version {
+                    break;
+                }
+            }
+        }
     }
 
     Ok(())
