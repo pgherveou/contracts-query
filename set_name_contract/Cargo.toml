@@ -1,0 +1,40 @@
+[package]
+name = "name_setter"
+version = "0.1.0"
+authors = ["[your_name] <[your_email]>"]
+edition = "2021"
+
+[dependencies]
+ink = { version = "4.2.0", default-features = false }
+
+# ink = { version = "=4.0.0-beta", default-features = false }
+# ink_allocator = { version = "=4.0.0-beta", default-features = false }
+# ink_codegen = { version = "=4.0.0-beta", default-features = false }
+# ink_engine = { version = "=4.0.0-beta", default-features = false }
+# ink_env = { version = "=4.0.0-beta", default-features = false }
+# ink_ir = { version = "=4.0.0-beta", default-features = false }
+# ink_macro = { version = "=4.0.0-beta", default-features = false }
+# ink_metadata = { version = "=4.0.0-beta", default-features = false }
+# ink_prelude = { version = "=4.0.0-beta", default-features = false }
+# ink_primitives = { version = "=4.0.0-beta", default-features = false }
+# ink_storage = { version = "=4.0.0-beta", default-features = false }
+# ink_storage_traits = { version = "=4.0.0-beta", default-features = false }
+
+scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
+scale-info = { version = "2.3", default-features = false, features = ["derive"], optional = true }
+
+[dev-dependencies]
+ink_e2e = "4.0.1"
+
+[lib]
+path = "lib.rs"
+
+[features]
+default = ["std"]
+std = [
+    "ink/std",
+    "scale/std",
+    "scale-info/std",
+]
+ink-as-dependency = []
+e2e-tests = []
