@@ -1,10 +1,31 @@
 #!/bin/bash
-set -e
+set -xe
 
-# go to cotnract directory
-pushd ~/github/set_name_contract
+if ! [ -x "$(command -v swanky-node)" ]; then
+	echo "installing swanky-node..."
+	# this branch enables manual sealing, so we can author block on demand with pending transactions
+	cargo install --git https://github.com/pgherveou/swanky-node --branch main --bin swanky-node
+fi
+
+if ! [ -x "$(command -v cargo-contract)" ]; then
+	echo "installing cargo-contract..."
+	cargo install --force --locked cargo-contract
+fi
+
+if ! [ -x "target/release/contracts-query" ]; then
+	echo "compiling contracts-query..."
+	cargo build --release
+fi
+
+# check if ink contract is compiled
+pushd set_name_contract
+if ! [ -x "target/ink/name_setter.contract" ]; then
+	echo "compiling name_setter contract..."
+	cargo contract build --release
+fi
 
 # start swanky-node
+echo "starting swanky-node..."
 pid=$(
 	swanky-node --dev >/dev/null 2>&1 &
 	echo $!
@@ -12,6 +33,7 @@ pid=$(
 
 # set a trap to kill swanky-node when the script exits
 cleanup() {
+	echo "killing swanky-node..."
 	kill $pid
 }
 
@@ -26,7 +48,7 @@ sleep 1
 
 # seal block 1
 echo "Sealing block 1"
-curl http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
+curl --silent http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
 	-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
 
 # create 2 contracts at block 2
@@ -36,7 +58,7 @@ sleep 1
 
 # seal block 2
 echo "Sealing block 2"
-curl http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
+curl --silent http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
 	-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
 
 # call contract 1 at block 3
@@ -46,16 +68,16 @@ sleep 1
 
 # seal block 3
 echo "Sealing block 3"
-curl http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
+curl --silent http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
 	-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
 
+popd
+
 # export db for each block
-contracts-query db-export db-0.json 0
-contracts-query db-export db-1.json 1
-contracts-query db-export db-2.json 2
-contracts-query db-export db-2.json 3
+./target/release/contracts-query db-export db-0.json 0
+./target/release/contracts-query db-export db-1.json 1
+./target/release/contracts-query db-export db-2.json 2
+./target/release/contracts-query db-export db-2.json 3
 
 # export blocks
-contracts-query block-export blocks.json 0 1 2 3
-
-sleep 100
+./target/release/contracts-query block-export blocks.json 0 1 2 3
