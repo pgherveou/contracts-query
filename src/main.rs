@@ -59,7 +59,7 @@ struct DBEntry {
 #[derive(Debug, Serialize)]
 struct DBExport {
     root: Vec<DBEntry>,
-    child_tries: HashMap<StorageKey, Vec<(StorageKey, Option<StorageData>)>>,
+    child_tries: HashMap<StorageKey, Vec<DBEntry>>,
 }
 
 #[derive(Serialize)]
@@ -141,10 +141,23 @@ async fn main() -> Result<()> {
                 });
             }
 
+            let child_tries = client
+                .get_all_child_storage_pairs(keys, block_hash.into())
+                .await?;
+
+            let child_tries = child_tries
+                .into_iter()
+                .map(|(key, values)| {
+                    let values = values
+                        .into_iter()
+                        .map(|(key, value)| DBEntry { key, value })
+                        .collect();
+                    (key, values)
+                })
+                .collect();
+
             let db_export = DBExport {
-                child_tries: client
-                    .get_all_child_storage_pairs(keys.clone(), block_hash.into())
-                    .await?,
+                child_tries,
                 root: db_entries,
             };
 
