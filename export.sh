@@ -26,10 +26,8 @@ fi
 
 # start swanky-node
 echo "starting swanky-node..."
-pid=$(
-	swanky-node --dev >/dev/null 2>&1 &
-	echo $!
-)
+swanky-node --dev >/dev/null 2>&1 &
+pid=$!
 
 # set a trap to kill swanky-node when the script exits
 cleanup() {
@@ -91,3 +89,7 @@ popd
 
 # export blocks
 ./target/release/contracts-query block-export blocks.json 0 1 2 3 4
+
+# while ps -p $pid >/dev/null; do
+# 	sleep 100
+# done

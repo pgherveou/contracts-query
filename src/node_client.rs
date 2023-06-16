@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use chrono::prelude::*;
 use codec::Decode;
 use frame_support::pallet_prelude::StorageVersion;
 use frame_support::storage::storage_prefix;
-
+use futures::stream::{self, StreamExt, TryStreamExt};
+use sp_core::storage::well_known_keys::CHILD_STORAGE_KEY_PREFIX;
 use sp_core::H256;
 use subxt::rpc::types::{ChainBlock, ChainBlockResponse, StorageChangeSet, StorageData};
 use subxt::rpc_params;
@@ -72,11 +75,10 @@ impl NodeClient {
         const PAGE_SIZE: usize = 100;
         let mut keys = Vec::<StorageKey>::new();
         let mut start_key = None;
+        let rpc = self.client.rpc();
 
         loop {
-            let new_keys = self
-                .client
-                .rpc()
+            let new_keys = rpc
                 .storage_keys_paged(&[], PAGE_SIZE as u32, start_key, block_hash)
                 .await
                 .map_err(|reason| anyhow::format_err!("get_keys failed: {:?}", reason))?;
@@ -90,6 +92,97 @@ impl NodeClient {
         }
 
         Ok(keys)
+    }
+
+    pub async fn get_all_child_storage_pairs(
+        &self,
+        keys: Vec<StorageKey>,
+        block_hash: Option<H256>,
+    ) -> Result<HashMap<StorageKey, Vec<(StorageKey, Option<StorageData>)>>> {
+        let child_keys = keys
+            .into_iter()
+            .filter(|k| k.0.starts_with(CHILD_STORAGE_KEY_PREFIX));
+
+        let map = stream::iter(child_keys)
+            .then(|key| async move {
+                let pair = self
+                    .get_child_storage_pair(key.as_ref(), block_hash)
+                    .await?;
+
+                Ok::<(StorageKey, Vec<(StorageKey, Option<StorageData>)>), anyhow::Error>((
+                    key, pair,
+                ))
+            })
+            .try_collect::<HashMap<_, _>>()
+            .await?;
+
+        Ok(map)
+    }
+
+    pub async fn get_child_storage_pair(
+        &self,
+        key: &[u8],
+        block_hash: Option<H256>,
+    ) -> Result<Vec<(StorageKey, Option<StorageData>)>> {
+        const PAGE_SIZE: usize = 100;
+        let mut start_key: &[u8] = &[];
+        let prefix: &[u8] = &[];
+
+        let mut pairs = Vec::<(StorageKey, Option<StorageData>)>::new();
+        let rpc = self.client.rpc();
+
+        loop {
+            let new_keys: Vec<StorageKey> = rpc
+                .request(
+                    "childstate_getKeysPaged",
+                    rpc_params![
+                        to_hex(key),
+                        to_hex(prefix),
+                        100,
+                        to_hex(start_key),
+                        block_hash
+                    ],
+                )
+                .await?;
+
+            let has_more = new_keys.len() > PAGE_SIZE;
+
+            let new_pairs = stream::iter(new_keys)
+                .then(|child_key| async move {
+                    let data = self
+                        .get_child_key_storage(key.as_ref(), child_key.as_ref(), block_hash)
+                        .await?;
+                    Ok::<(StorageKey, Option<StorageData>), anyhow::Error>((child_key, data))
+                })
+                .try_collect::<Vec<_>>()
+                .await?;
+
+            pairs.extend(new_pairs);
+            if !has_more {
+                break;
+            }
+
+            start_key = pairs.last().map(|(k, _)| k.as_ref()).unwrap_or_default();
+        }
+
+        Ok(pairs)
+    }
+
+    pub async fn get_child_key_storage(
+        &self,
+        key: &[u8],
+        child_key: &[u8],
+        block_hash: Option<H256>,
+    ) -> Result<Option<StorageData>> {
+        let data = self
+            .client
+            .rpc()
+            .request(
+                "childstate_getStorage",
+                rpc_params![to_hex(key), to_hex(child_key), block_hash],
+            )
+            .await?;
+        Ok(data)
     }
 
     pub async fn get_storage_value<K: AsRef<[u8]>>(
@@ -125,4 +218,8 @@ impl NodeClient {
             .ok_or_else(|| anyhow::format_err!("block not found"))
             .map(|ChainBlockResponse { block, .. }| block)
     }
+}
+
+fn to_hex(bytes: impl AsRef<[u8]>) -> String {
+    format!("0x{}", hex::encode(bytes.as_ref()))
 }

@@ -7,6 +7,7 @@ mod node_client;
 use anyhow::Result;
 use clap::Parser;
 use serde::{Serialize, Serializer};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use subxt::rpc::types::ChainBlock;
@@ -55,6 +56,12 @@ struct DBEntry {
     value: Option<StorageData>,
 }
 
+#[derive(Debug, Serialize)]
+struct DBExport {
+    root: Vec<DBEntry>,
+    child_tries: HashMap<StorageKey, Vec<(StorageKey, Option<StorageData>)>>,
+}
+
 #[derive(Serialize)]
 #[serde(remote = "ChainBlock")]
 pub struct ChainBlockRef<T: Config> {
@@ -85,6 +92,22 @@ fn write_to_file<T: Serialize>(value: &T, file: String) -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_child_state() {
+    let client = node_client::NodeClient::from_url("ws://127.0.0.1:9944")
+        .await
+        .unwrap();
+
+    let root_keys = client.get_keys(None).await.unwrap();
+    let result = client
+        .get_all_child_storage_pairs(root_keys, None)
+        .await
+        .unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+
+    println!("{:?}", json);
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let CliCommand { url, command } = CliCommand::parse();
@@ -110,12 +133,22 @@ async fn main() -> Result<()> {
             let block_hash = client.get_blockhash(at_block).await?;
             let keys = client.get_keys(block_hash.into()).await?;
             let mut db_entries = Vec::new();
-            for key in keys {
+            for key in &keys {
                 let value = client.get_storage_value(&key, block_hash.into()).await?;
-                db_entries.push(DBEntry { key, value });
+                db_entries.push(DBEntry {
+                    key: key.clone(),
+                    value,
+                });
             }
 
-            write_to_file(&db_entries, output_file)?;
+            let db_export = DBExport {
+                child_tries: client
+                    .get_all_child_storage_pairs(keys.clone(), block_hash.into())
+                    .await?,
+                root: db_entries,
+            };
+
+            write_to_file(&db_export, output_file)?;
         }
         SubCommand::BlockExport {
             output_file,
@@ -145,7 +178,7 @@ async fn main() -> Result<()> {
                 let block_hash = client.get_blockhash(block_number).await?;
                 let time = client.get_timestamp(block_hash).await?;
                 let version = client.get_contract_version(Some(block_hash)).await?;
-                println!("{block_number} -> {time} -> {:?}", version);
+                println!("{block_number} -> {time} -> {version:?}");
                 block_number -= 1;
 
                 if version == target_version {
