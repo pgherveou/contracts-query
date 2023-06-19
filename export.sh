@@ -35,6 +35,12 @@ cleanup() {
 	kill $pid
 }
 
+seal_block() {
+	echo "Sealing block $1"
+	curl --silent http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
+		-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
+}
+
 trap cleanup SIGINT SIGTERM EXIT
 
 # give it a second to start up
@@ -44,39 +50,27 @@ sleep 1
 cargo contract instantiate --constructor new --args "\"First contract\"" --suri //Alice --execute --skip-confirm --output-json >/tmp/result-contract-1.json &
 sleep 1
 
-# seal block 1
-echo "Sealing block 1"
-curl --silent http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
-	-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
+seal_block "1"
 
 # create 2 contracts at block 2
 cargo contract instantiate --constructor new --args "\"First contract\"" --suri //Alice --salt 0x01 --execute --skip-confirm >/dev/null 2>&1 &
 cargo contract instantiate --constructor new --args "\"First contract\"" --suri //Alice --salt 0x02 --execute --skip-confirm >/dev/null 2>&1 &
 sleep 1
 
-# seal block 2
-echo "Sealing block 2"
-curl --silent http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
-	-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
+seal_block "2"
 
 # call contract 1 at block 3
 contract=$(cat /tmp/result-contract-1.json | jq -r .contract)
 cargo contract call --contract $contract --message set_name --args "\"First contract called\"" --suri //Alice --execute --skip-confirm >/dev/null 2>&1 &
 sleep 1
 
-# seal block 3
-echo "Sealing block 3"
-curl --silent http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
-	-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
+seal_block "3"
 
 # terminate contract 1 at block 4
 cargo contract call --contract $contract --message terminate --suri //Alice --execute --skip-confirm >/dev/null 2>&1 &
 sleep 1
 
-# seal block 3
-echo "Sealing block 4"
-curl --silent http://localhost:9933 -H "Content-Type:application/json;charset=utf-8" \
-	-d '{ "jsonrpc":"2.0", "id":1, "method":"engine_createBlock", "params": [false, true, null] }' | jq
+seal_block "4"
 
 popd
 
