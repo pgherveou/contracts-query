@@ -279,7 +279,7 @@ impl NodeClient {
         let mut upper = initial_info.block_number;
         loop {
             let block_number = (lower + upper) / 2;
-            let info = self.get_block_info(block_number.into()).await?;
+            let mut info = self.get_block_info(block_number.into()).await?;
 
             //  the previous block is in [lower, mid]
             if info.matching_migration_info(initial_info) {
@@ -292,11 +292,11 @@ impl NodeClient {
 
             // stop when the upper and lower bounds are adjacent
             if upper - lower <= 1 {
-                if !info.matching_migration_info(initial_info) {
-                    return Ok(info);
+                if info.matching_migration_info(initial_info) {
+                    let previous_block = info.block_number - 1;
+                    info = self.get_block_info(previous_block.into()).await?;
                 }
-                let previous_block = initial_info.block_number - 1;
-                let info = self.get_block_info(previous_block.into()).await?;
+
                 return Ok(info);
             }
         }
