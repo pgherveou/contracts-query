@@ -492,6 +492,7 @@ dependencies = [
  "futures",
  "hex",
  "impl-serde",
+ "itertools",
  "jsonrpsee 0.18.2",
  "pallet-contracts-primitives",
  "parity-scale-codec",

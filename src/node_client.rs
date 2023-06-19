@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use anyhow::Result;
 use chrono::prelude::*;
 use codec::Decode;
-use frame_support::pallet_prelude::StorageVersion;
 use frame_support::storage::storage_prefix;
 use futures::stream::{self, StreamExt, TryStreamExt};
 use sp_core::storage::well_known_keys::CHILD_STORAGE_KEY_PREFIX;
@@ -21,7 +20,9 @@ pub struct NodeClient {
     client: OnlineClient<PolkadotConfig>,
 }
 
-#[derive(Debug)]
+type StorageVersion = u16;
+
+#[derive(Debug, Clone)]
 pub struct BlockInfo {
     pub block_hash: H256,
     pub block_number: u32,
