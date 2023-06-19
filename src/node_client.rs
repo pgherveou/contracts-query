@@ -282,7 +282,7 @@ impl NodeClient {
             let info = self.get_block_info(block_number.into()).await?;
 
             //  the previous block is in [lower, mid]
-            if info.matching_migration_info(&initial_info) {
+            if info.matching_migration_info(initial_info) {
                 upper = block_number;
 
             // the previous block is in [mid, upper]
@@ -292,7 +292,7 @@ impl NodeClient {
 
             // stop when the upper and lower bounds are adjacent
             if upper - lower <= 1 {
-                if !info.matching_migration_info(&initial_info) {
+                if !info.matching_migration_info(initial_info) {
                     return Ok(info);
                 }
                 let previous_block = initial_info.block_number - 1;
