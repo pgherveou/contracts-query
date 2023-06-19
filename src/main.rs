@@ -10,8 +10,8 @@
 //! ## Print migrating blocks
 //!
 //! Print each block until the target version is reached.
-//! contracts-query "wss://rococo-contracts-rpc.polkadot.io:443" print-migrating-blocks --target-version 8
 //! ```bash
+//! > contracts-query "wss://rococo-contracts-rpc.polkadot.io:443" print-migrating-blocks --target-version 8
 //! 2023-06-19 10:55:12.123 +02:00 -> BlockInfo { block_hash: 0xcd37c55fd9f1ebd98048c0f8a727c43371351a40865c725fbd8765975a8b6a2c, block_number: 2829131, version: StorageVersion(11), migration_in_progress: false } (current block)                                        │
 //! 2023-06-19 10:55:00.092 +02:00 -> BlockInfo { block_hash: 0xfe03bf40594604b70acac9964e35783942daf79a4d234d73ad53a2cb18f7807f, block_number: 2829130, version: StorageVersion(11), migration_in_progress: false }                                                        │
 //! 2023-06-05 18:29:00.138 +02:00 -> BlockInfo { block_hash: 0xc5a879739b995b8b69655607f3ae59f8707c6e92026e953f9d474131808cf9e1, block_number: 2738932, version: StorageVersion(10), migration_in_progress: true }                                                         │
