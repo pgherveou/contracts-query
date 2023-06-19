@@ -13,10 +13,27 @@ use subxt::rpc_params;
 use subxt::storage::StorageKey;
 use subxt::{config::PolkadotConfig, OnlineClient};
 
-use crate::polkadot;
+/// Note, generate the file with subxt metadata -f bytes > metadata.scale
+#[subxt::subxt(runtime_metadata_path = "./metadata.scale")]
+mod polkadot {}
 
 pub struct NodeClient {
     client: OnlineClient<PolkadotConfig>,
+}
+
+#[derive(Debug)]
+pub struct BlockInfo {
+    pub block_hash: H256,
+    pub block_number: u32,
+    pub version: StorageVersion,
+    pub migration_in_progress: bool,
+}
+
+impl BlockInfo {
+    fn matching_migration_info(&self, other: &Self) -> bool {
+        (self.version == other.version)
+            && (self.migration_in_progress == other.migration_in_progress)
+    }
 }
 
 impl NodeClient {
@@ -40,6 +57,19 @@ impl NodeClient {
 
         StorageVersion::decode(&mut value.as_slice())
             .map_err(|reason| anyhow::format_err!("failed to decode StorageVersion: {:?}", reason))
+    }
+
+    pub async fn contracts_migration_in_progress(&self, block_hash: Option<H256>) -> Result<bool> {
+        let addr = polkadot::storage().contracts().migration_in_progress();
+
+        let storage = if let Some(hash) = block_hash {
+            self.client.storage().at(hash)
+        } else {
+            self.client.storage().at_latest().await?
+        };
+
+        let is_in_progress = storage.fetch(&addr).await?.is_some();
+        Ok(is_in_progress)
     }
 
     /// Get the block hash of the given block number.
@@ -217,6 +247,59 @@ impl NodeClient {
             .await?
             .ok_or_else(|| anyhow::format_err!("block not found"))
             .map(|ChainBlockResponse { block, .. }| block)
+    }
+
+    pub async fn get_block_info(&self, block_number: Option<u32>) -> Result<BlockInfo> {
+        let block_number = if let Some(block_number) = block_number {
+            block_number
+        } else {
+            self.get_blocknumber().await?
+        };
+
+        let block_hash = self.get_blockhash(block_number).await?;
+        let (version, migration_in_progress) = futures::try_join!(
+            self.get_contract_version(Some(block_hash)),
+            self.contracts_migration_in_progress(block_hash.into()),
+        )?;
+
+        Ok(BlockInfo {
+            block_hash,
+            block_number,
+            version,
+            migration_in_progress,
+        })
+    }
+
+    pub async fn find_previous_migration_info(
+        &self,
+        initial_info: &BlockInfo,
+    ) -> Result<BlockInfo> {
+        // git bisect between 0..start_block_number to find the oldest block where BlockMigrationInfo == initial_state
+        let mut lower = 0;
+        let mut upper = initial_info.block_number;
+        loop {
+            let block_number = (lower + upper) / 2;
+            let info = self.get_block_info(block_number.into()).await?;
+
+            //  the previous block is in [lower, mid]
+            if info.matching_migration_info(&initial_info) {
+                upper = block_number;
+
+            // the previous block is in [mid, upper]
+            } else {
+                lower = block_number;
+            }
+
+            // stop when the upper and lower bounds are adjacent
+            if upper - lower <= 1 {
+                if !info.matching_migration_info(&initial_info) {
+                    return Ok(info);
+                }
+                let previous_block = initial_info.block_number - 1;
+                let info = self.get_block_info(previous_block.into()).await?;
+                return Ok(info);
+            }
+        }
     }
 }
 

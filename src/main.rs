@@ -15,20 +15,24 @@ use subxt::rpc::types::{ChainBlockExtrinsic, StorageData};
 use subxt::storage::StorageKey;
 use subxt::{Config, PolkadotConfig};
 
-/// Note, generate the file with subxt metadata -f bytes > metadata.scale
-#[subxt::subxt(runtime_metadata_path = "./metadata.scale")]
-pub mod polkadot {}
-
 // Parsed command instructions from the command line
 #[derive(Parser)]
 #[clap(author, about, version)]
 struct CliCommand {
-    #[clap(default_value = "ws://127.0.0.1:9944")]
+    #[clap(short, long, default_value = "ws://127.0.0.1:9944")]
     url: String,
 
     /// the command to execute
     #[clap(subcommand)]
     command: SubCommand,
+}
+
+#[derive(Parser, Debug)]
+struct PrintBlocksCmd {
+    #[clap(short, long)]
+    from_block_number: Option<u32>,
+    #[clap(short, long)]
+    target_version: u16,
 }
 
 /// The subcommand to execute
@@ -37,31 +41,35 @@ enum SubCommand {
     /// Export the change sets for all the keys since block 0
     ChangeSets { output_file: String },
 
-    /// Export the database as a json file
+    /// Export the database, including child tries as a json file
     DBExport { output_file: String, at_block: u32 },
 
-    /// Export the blocks as a json file
+    /// Export the specified blocks as a json file
     BlockExport {
         output_file: String,
         blocks: Vec<u32>,
     },
 
     /// Print each block until the target version is reached.
-    PrintBlocksVersion { target_version: u16 },
+    /// E.g ❯ contracts-query "wss://rococo-contracts-rpc.polkadot.io:443" print-blocks-version --target-version 8
+    PrintBlocksVersion(PrintBlocksCmd),
 }
 
+/// A database key-value entry
 #[derive(Debug, Serialize)]
 struct DBEntry {
     key: StorageKey,
     value: Option<StorageData>,
 }
 
+/// The database export
 #[derive(Debug, Serialize)]
 struct DBExport {
     root: Vec<DBEntry>,
     child_tries: HashMap<StorageKey, Vec<DBEntry>>,
 }
 
+/// A wrapper to serialize a `ChainBlock` as a json object
 #[derive(Serialize)]
 #[serde(remote = "ChainBlock")]
 pub struct ChainBlockRef<T: Config> {
@@ -71,6 +79,7 @@ pub struct ChainBlockRef<T: Config> {
     pub extrinsics: Vec<ChainBlockExtrinsic>,
 }
 
+/// Serialize a collection of [`ChainBlockExtrinsic`]
 pub fn vec_chain_block_extrinsic<S: Serializer>(
     extrinsics: &[ChainBlockExtrinsic],
     serializer: S,
@@ -85,6 +94,7 @@ pub fn vec_chain_block_extrinsic<S: Serializer>(
     }))
 }
 
+/// Serialize to JSON and write to file
 fn write_to_file<T: Serialize>(value: &T, file: String) -> Result<()> {
     let json = serde_json::to_string_pretty(value)?;
     let mut file = File::create(file)?;
@@ -94,9 +104,7 @@ fn write_to_file<T: Serialize>(value: &T, file: String) -> Result<()> {
 
 #[tokio::test]
 async fn test_child_state() {
-    let client = node_client::NodeClient::from_url("ws://127.0.0.1:9944")
-        .await
-        .unwrap();
+    let client = NodeClient::from_url("ws://127.0.0.1:9944").await.unwrap();
 
     let root_keys = client.get_keys(None).await.unwrap();
     let result = client
@@ -184,17 +192,18 @@ async fn main() -> Result<()> {
 
             write_to_file(&blocks, output_file)?;
         }
-        SubCommand::PrintBlocksVersion { target_version } => {
-            let mut block_number = client.get_blocknumber().await?;
-
+        SubCommand::PrintBlocksVersion(PrintBlocksCmd {
+            from_block_number: block_number,
+            target_version,
+        }) => {
+            let mut info = client.get_block_info(block_number).await?;
+            let time = client.get_timestamp(info.block_hash.into()).await?;
+            println!("{time} -> {info:?} (current block)");
             loop {
-                let block_hash = client.get_blockhash(block_number).await?;
-                let time = client.get_timestamp(block_hash).await?;
-                let version = client.get_contract_version(Some(block_hash)).await?;
-                println!("{block_number} -> {time} -> {version:?}");
-                block_number -= 1;
-
-                if version == target_version {
+                info = client.find_previous_migration_info(&info).await?;
+                let time = client.get_timestamp(info.block_hash.into()).await?;
+                println!("{time} -> {info:?}");
+                if info.version <= target_version && !info.migration_in_progress {
                     break;
                 }
             }
