@@ -51,8 +51,8 @@ enum SubCommand {
     },
 
     /// Print each block until the target version is reached.
-    /// E.g ❯ contracts-query "wss://rococo-contracts-rpc.polkadot.io:443" print-blocks-version --target-version 8
-    PrintBlocksVersion(PrintBlocksCmd),
+    /// E.g ❯ contracts-query "wss://rococo-contracts-rpc.polkadot.io:443" print-migrating-blocks --target-version 8
+    PrintMigratingBlocks(PrintBlocksCmd),
 }
 
 /// A database key-value entry
@@ -192,7 +192,7 @@ async fn main() -> Result<()> {
 
             write_to_file(&blocks, output_file)?;
         }
-        SubCommand::PrintBlocksVersion(PrintBlocksCmd {
+        SubCommand::PrintMigratingBlocks(PrintBlocksCmd {
             from_block_number: block_number,
             target_version,
         }) => {
