@@ -41,7 +41,11 @@ use subxt::{Config, PolkadotConfig};
 #[derive(Parser)]
 #[clap(author, about, version)]
 struct CliCommand {
-    #[clap(short, long, default_value = "ws://127.0.0.1:9944")]
+    #[clap(
+        short,
+        long,
+        default_value = "wss://rococo-contracts-rpc.polkadot.io:443"
+    )]
     url: String,
 
     /// the command to execute
@@ -61,10 +65,15 @@ struct PrintBlocksCmd {
 #[derive(Parser, Debug)]
 enum SubCommand {
     /// Export the change sets for all the keys since block 0
-    ChangeSets { output_file: String },
+    ChangeSets {
+        output_file: String,
+    },
 
     /// Export the database, including child tries as a json file
-    DBExport { output_file: String, at_block: u32 },
+    DBExport {
+        output_file: String,
+        at_block: u32,
+    },
 
     /// Export the specified blocks as a json file
     BlockExport {
@@ -135,6 +144,17 @@ async fn test_child_state() {
     let json = serde_json::to_string(&result).unwrap();
 
     println!("{:?}", json);
+}
+
+#[tokio::test]
+async fn test_storage_version() {
+    let client = NodeClient::from_url("wss://rococo-contracts-rpc.polkadot.io:443")
+        .await
+        .unwrap();
+
+    let version = client.get_contract_version(None).await;
+
+    println!("{:?}", version);
 }
 
 #[tokio::main]

@@ -12,6 +12,13 @@ use subxt::rpc_params;
 use subxt::storage::StorageKey;
 use subxt::{config::PolkadotConfig, OnlineClient};
 
+#[test]
+fn print_prefixes() {
+    use sp_core::storage::well_known_keys::DEFAULT_CHILD_STORAGE_KEY_PREFIX;
+    dbg!(to_hex(CHILD_STORAGE_KEY_PREFIX));
+    dbg!(to_hex(DEFAULT_CHILD_STORAGE_KEY_PREFIX));
+}
+
 /// Note, generate the file with subxt metadata -f bytes > metadata.scale
 #[subxt::subxt(runtime_metadata_path = "./metadata.scale")]
 mod polkadot {}
