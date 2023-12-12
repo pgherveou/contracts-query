@@ -1,4 +1,3 @@
-// #![allow(dead_code)]
 // #![allow(unused_imports)]
 // #![allow(unused_variables)]
 
@@ -24,11 +23,13 @@
 //! ```
 mod node_client;
 
-use crate::node_client::NodeClient;
+use crate::node_client::{BlockInfo, NodeClient};
 use anyhow::Result;
 use clap::Parser;
+use futures::TryStreamExt;
 use itertools::Itertools;
 use serde::{Serialize, Serializer};
+use sp_core::crypto::{AccountId32, Ss58Codec};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -61,19 +62,24 @@ struct PrintBlocksCmd {
     target_version: u16,
 }
 
+#[derive(Parser, Debug)]
+struct PrintAccountInfoCmd {
+    #[clap(short, long)]
+    account_id: String,
+    #[clap(short, long)]
+    from_block_number: Option<u32>,
+    #[clap(short, long)]
+    target_version: u16,
+}
+
 /// The subcommand to execute
 #[derive(Parser, Debug)]
 enum SubCommand {
     /// Export the change sets for all the keys since block 0
-    ChangeSets {
-        output_file: String,
-    },
+    ChangeSets { output_file: String },
 
     /// Export the database, including child tries as a json file
-    DBExport {
-        output_file: String,
-        at_block: u32,
-    },
+    DBExport { output_file: String, at_block: u32 },
 
     /// Export the specified blocks as a json file
     BlockExport {
@@ -83,6 +89,9 @@ enum SubCommand {
 
     /// Print each block until the target version is reached.
     PrintMigratingBlocks(PrintBlocksCmd),
+
+    /// Print Providers count after each migration
+    PrintAccountInfo(PrintAccountInfoCmd),
 }
 
 /// A database key-value entry
@@ -237,17 +246,14 @@ async fn main() -> Result<()> {
             from_block_number: block_number,
             target_version,
         }) => {
-            let mut info = client.get_block_info(block_number).await?;
+            let migrating_blocks = client.stream_migrating_blocks(block_number, target_version);
+            tokio::pin!(migrating_blocks);
+
             let mut infos = vec![];
-            println!("Fetching migration blocks:");
-            loop {
-                info = client.find_previous_migration_info(&info).await?;
+            while let Some(info) = migrating_blocks.try_next().await? {
                 let time = client.get_timestamp(info.block_hash).await?;
                 infos.push(info.clone());
                 println!("{time} -> {info:?}");
-                if info.version <= target_version && !info.migration_in_progress {
-                    break;
-                }
             }
 
             let last_version = match infos.first() {
@@ -279,6 +285,30 @@ async fn main() -> Result<()> {
                     );
                     version - 1
                 });
+        }
+        SubCommand::PrintAccountInfo(PrintAccountInfoCmd {
+            account_id,
+            from_block_number: block_number,
+            target_version,
+        }) => {
+            // let account_id = hex::decode(account_id).unwrap();
+            let account_id = AccountId32::from_ss58check(&account_id)?;
+
+            let migrating_blocks = client.stream_migrating_blocks(block_number, target_version);
+            tokio::pin!(migrating_blocks);
+
+            while let Some(info) = migrating_blocks.try_next().await? {
+                let BlockInfo {
+                    block_hash,
+                    version,
+                    ..
+                } = info;
+
+                let account = client
+                    .get_account_info(account_id.clone().into(), Some(block_hash))
+                    .await?;
+                println!("{version} -> providers: {:?}", account.map(|a| a.providers));
+            }
         }
     }
 

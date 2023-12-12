@@ -23,4 +23,5 @@ itertools = "0.10.5"
 subxt = { git = "https://github.com/paritytech/subxt", branch = "master" }
 impl-serde = { version = "0.4.0" }
 tokio = { version = "1.8", features = ["rt-multi-thread", "macros", "time"] }
-
+async-stream = "0.3.3"
+tokio-stream ={version="0.1.9", features=["net"]}

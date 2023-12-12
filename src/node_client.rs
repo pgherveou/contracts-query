@@ -10,7 +10,12 @@ use sp_core::H256;
 use subxt::rpc::types::{ChainBlock, ChainBlockResponse, StorageChangeSet, StorageData};
 use subxt::rpc_params;
 use subxt::storage::StorageKey;
+use subxt::utils::AccountId32;
 use subxt::{config::PolkadotConfig, OnlineClient};
+use tokio_stream::Stream;
+
+use self::polkadot::runtime_types::frame_system::AccountInfo;
+use self::polkadot::runtime_types::pallet_balances::types::AccountData;
 
 #[test]
 fn print_prefixes() {
@@ -257,6 +262,23 @@ impl NodeClient {
             .map(|ChainBlockResponse { block, .. }| block)
     }
 
+    pub async fn get_account_info(
+        &self,
+        account: AccountId32,
+        block_hash: Option<H256>,
+    ) -> Result<Option<AccountInfo<u32, AccountData<u128>>>> {
+        let addr = polkadot::storage().system().account(account);
+
+        let storage = if let Some(hash) = block_hash {
+            self.client.storage().at(hash)
+        } else {
+            self.client.storage().at_latest().await?
+        };
+
+        let data = storage.fetch(&addr).await?;
+        Ok(data)
+    }
+
     pub async fn get_block_info(&self, block_number: Option<u32>) -> Result<BlockInfo> {
         let block_number = if let Some(block_number) = block_number {
             block_number
@@ -278,6 +300,22 @@ impl NodeClient {
         })
     }
 
+    pub fn stream_migrating_blocks(
+        &self,
+        from_block_number: Option<u32>,
+        target_version: u16,
+    ) -> impl Stream<Item = anyhow::Result<BlockInfo>> + '_ {
+        async_stream::try_stream!({
+            let mut info = self.get_block_info(from_block_number).await?;
+            loop {
+                info = self.find_previous_migration_info(&info).await?;
+                yield info.clone();
+                if info.version <= target_version && !info.migration_in_progress {
+                    break;
+                }
+            }
+        })
+    }
     pub async fn find_previous_migration_info(
         &self,
         initial_info: &BlockInfo,
